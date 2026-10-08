@@ -36,9 +36,9 @@ def extraer_datos_pdf(pdf_path):
         doc.close()
 
         # Patrones para capturar el número de OT (ej. "N° de OT: 34115" o "OT: 34115")
-        coincidencia = re.search(r'N[°o]?\s*de\s*OT[:\s]*(\d+)', texto_completo, re.IGNORECASE)[cite: 4]
+        coincidencia = re.search(r'N[°o]?\s*de\s*OT[:\s]*(\d+)', texto_completo, re.IGNORECASE)
         if not coincidencia:
-            coincidencia = re.search(r'(?:OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)[cite: 4]
+            coincidencia = re.search(r'(?:OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)
 
         if coincidencia:
             num_ot = coincidencia.group(1)
@@ -61,48 +61,42 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
     # 1. POSICIONAR 'DEPARTAMENTO:'
     # --------------------------------------------------------------------------
     if departamento:
-        # Buscar la palabra 'DEPARTAMENTO:' dentro de la página[cite: 4]
-        matches = pagina.search_for("DEPARTAMENTO:")[cite: 4]
+        matches = pagina.search_for("DEPARTAMENTO:")
         if matches:
-            rect = matches[0]  # Rectángulo que encierra el texto 'DEPARTAMENTO:'[cite: 4]
-            # Escribir el valor justo a la derecha de la etiqueta
+            rect = matches[0]
             x_pos = rect.x1 + 10
             y_pos = rect.y1 - 2
             pagina.insert_text((x_pos, y_pos), departamento, fontsize=9, color=(0, 0, 0))
         else:
-            # Respaldo de posición relativa si no encuentra el texto exacto
             pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.27), departamento, fontsize=9, color=(0, 0, 0))
 
     # --------------------------------------------------------------------------
     # 2. POSICIONAR 'Sitio:'
     # --------------------------------------------------------------------------
     if sitio:
-        matches = pagina.search_for("Sitio:")[cite: 4]
+        matches = pagina.search_for("Sitio:")
         if matches:
             rect = matches[0]
             x_pos = rect.x1 + 10
             y_pos = rect.y1 - 2
             pagina.insert_text((x_pos, y_pos), sitio, fontsize=9, color=(0, 0, 0))
         else:
-            # Respaldo de posición relativa
             pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.30), sitio, fontsize=9, color=(0, 0, 0))
 
     # --------------------------------------------------------------------------
     # 3. POSICIONAR FIRMA EN 'Autorizado'
     # --------------------------------------------------------------------------
-    matches_aut = pagina.search_for("Autorizado")[cite: 4]
+    matches_aut = pagina.search_for("Autorizado")
     if matches_aut:
         rect = matches_aut[0]
-        # Dibujar la firma justo arriba del texto "Autorizado (supervisor)"[cite: 4]
         firma_box = fitz.Rect(
             rect.x0 - 20,
-            rect.y0 - 65,  # Subir 65 puntos para quedar sobre la línea continua[cite: 4]
+            rect.y0 - 65,
             rect.x1 + 80,
             rect.y0 - 5
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
     else:
-        # Respaldo por defecto sobre la primera línea en la esquina inferior izquierda
         firma_box = fitz.Rect(
             page_rect.width * 0.08,
             page_rect.height * 0.85,
@@ -170,12 +164,10 @@ with col1:
         with open(temp_input_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # Extracción automática mediante búsqueda dinámica
         ot_detectada = extraer_datos_pdf(temp_input_path)
         if ot_detectada:
             st.success(f"🔍 N° de OT detectado en el PDF: **{ot_detectada}**")
 
-    # Campos de entrada
     numero_ot = st.text_input("N° de OT", value=ot_detectada, placeholder="Ej: 34115").strip()
     departamento = st.text_input("DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones").strip()
     sitio = st.text_input("Sitio:", placeholder="Ej: Cruces de Colon").strip()
@@ -200,7 +192,6 @@ with col2:
             key="canvas_firma",
         )
 
-        # Manejo seguro para prevenir el error RuntimeError de streamlit-drawable-canvas
         if canvas_result is not None:
             try:
                 if canvas_result.image_data is not None:
@@ -240,7 +231,6 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
         path_pdf_original = os.path.join(DIR_WO, f"OT_{numero_ot}_original.pdf")
         path_pdf_firmado = os.path.join(DIR_COMPLETED, f"OT_{numero_ot}_firmado.pdf")
 
-        # Guardar archivo original subido
         with open(path_pdf_original, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
@@ -256,7 +246,6 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
 
         st.success("✅ Documento PDF actualizado y firmado correctamente.")
 
-        # Botón de descarga
         with open(path_pdf_firmado, "rb") as f:
             st.download_button(
                 label="📥 Descargar PDF Final Firmado",
@@ -265,7 +254,6 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
                 mime="application/pdf"
             )
 
-        # Envío por correo
         with st.spinner(f"Enviando correo a {destinatario_email}..."):
             asunto = f"Work Order Finalizada - OT #{numero_ot}"
             cuerpo = (
