@@ -132,16 +132,13 @@ with col2:
 
        if canvas_result is not None:
     try:
-        # Intentamos obtener la imagen del canvas
-        img_data = canvas_result.image_data
-        
-        if img_data is not None:
-            # --- PON AQUÍ TU CÓDIGO PARA PROCESAR LA IMAGEN ---
-            # Por ejemplo: st.write("Firma/dibujo detectado")
+        # Consultamos la propiedad dentro del bloque protegido
+        if canvas_result.image_data is not None:
+            # --- AQUÍ VA TU CÓDIGO QUE PROCESA LA IMAGEM/FIRMA ---
             pass
-            
+
     except RuntimeError:
-        # El canvas aún no ha renderizado la imagen o está esperando interacción
+        # El canvas aún no se ha renderizado completamente o no contiene datos
         pass
 
     else:
