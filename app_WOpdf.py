@@ -145,13 +145,7 @@ with col2:
                 firma_lista = False
             except Exception as e:
                 st.warning(f"Esperando trazo de firma... ({e})")
-                firma_lista = False 
-
-        if canvas_result.image_data is not None:
-            # Guardar la imagen extraída del canvas
-            img = Image.fromarray(canvas_result.image_data.astype('uint8'))
-            img.save(temp_firma_path)
-            firma_lista = True
+                firma_lista = False
 
     else:
         uploaded_signature = st.file_uploader("Subir imagen de la firma", type=["png", "jpg", "jpeg"])
