@@ -130,7 +130,14 @@ with col2:
             key="canvas",
         )
 
-        if canvas_result and getattr(canvas_result, "image_data", None) is not None:
+        if canvas_result:
+    try:
+        if canvas_result.image_data is not None:
+            # Tu código para procesar la imagen aquí
+            pass
+    except RuntimeError:
+        # El canvas aún no ha recibido o enviado datos de imagen
+        pass
     # Tu código para procesar la imagen aquí
             # Guardar la imagen extraída del canvas
             img = Image.fromarray(canvas_result.image_data.astype('uint8'))
