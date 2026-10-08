@@ -1,31 +1,12 @@
 import os
 import re
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from PIL import Image
 import fitz  # PyMuPDF
 import streamlit as st
-from streamlit_drawable_canvas import st_canvas
-
-# Configuración de página
-st.set_page_config(
-    page_title="Gestión y Firma de Ordenes de Trabajo",
-    page_icon="📝",
-    layout="wide"
-)
-
-# Directorios de trabajo
-DIR_WO = "work_orders"
-DIR_COMPLETED = "completed"
-os.makedirs(DIR_WO, exist_ok=True)
-os.makedirs(DIR_COMPLETED, exist_ok=True)
-
+from PIL import Image
 
 def extraer_datos_pdf(pdf_path):
     """
-    Busca patrones dentro del texto del PDF para extraer automáticamente el número de OT.
+    Lee el texto del PDF buscando la etiqueta 'N° de OT:' de la plantilla original.
     """
     num_ot = ""
     try:
@@ -35,47 +16,50 @@ def extraer_datos_pdf(pdf_path):
             texto_completo += pagina.get_text("text") + "\n"
         doc.close()
 
-        # Buscar patrones comunes: "N° de OT: 34115", "OT: 34115", "WO: 34115", etc.
-        coincidencia = re.search(r'(?:N[°o]?\s*de\s*OT|OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)
+        # Patrón específico para capturar los dígitos después de "N° de OT:" o "OT:"
+        coincidencia = re.search(r'N[°o]?\s*de\s*OT:\s*(\d+)', texto_completo, re.IGNORECASE)
+        if not coincidencia:
+            # Alternativa amplia si la palabra varía
+            coincidencia = re.search(r'(?:OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)
+
         if coincidencia:
             num_ot = coincidencia.group(1)
     except Exception as e:
-        st.warning(f"No se pudo leer el texto del PDF automáticamente: {e}")
-    
+        st.warning(f"No se pudo extraer el N° de OT automáticamente: {e}")
+
     return num_ot
 
 
 def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, departamento, sitio, num_ot):
     """
-    Escribe los datos de Departamento, Sitio y la Firma sobre el PDF en la posición adecuada.
+    Escribe el Departamento, Sitio y la Firma sobre la plantilla exacta según las coordenadas de la imagen.
     """
     doc = fitz.open(pdf_input_path)
-    pagina = doc[0]  # Se asume que los datos están en la primera página (puedes cambiar a doc[-1] si está al final)
+    pagina = doc[0]  # Se aplica en la primera página donde está el formato
 
-    # --------------------------------------------------------------------------
-    # NOTA DE COORDENADAS (X, Y):
-    # En un PDF de tamaño Carta estándar, el ancho es ~612 puntos y el alto es ~792 puntos.
-    # Ajusta estas coordenadas según el diseño exacto de tu plantilla PDF.
-    # --------------------------------------------------------------------------
+    # ----------------------------------------------------------------------
+    # CALIBRACIÓN DE COORDENADAS SEGÚN LA PLANTILLA MOSTRADA EN LA IMAGEN
+    # ----------------------------------------------------------------------
+    # El origen (0,0) está en la esquina superior izquierda del PDF.
 
-    # 1. Escribir Departamento si fue ingresado
+    # 1. Escribir DEPARTAMENTO (Alineado a la derecha de la etiqueta "DEPARTAMENTO:")
     if departamento:
-        # Ejemplo: Coordenadas (X=150, Y=120). Cambia según tu formato de PDF
-        pagina.insert_text((150, 120), departamento, fontsize=10, color=(0, 0, 0))
+        # Coordenada aproximada (X=210, Y=272)
+        pagina.insert_text((210, 272), departamento, fontsize=9, color=(0, 0, 0))
 
-    # 2. Escribir Sitio si fue ingresado
+    # 2. Escribir Sitio (Alineado a la derecha de la etiqueta "Sitio:")
     if sitio:
-        # Ejemplo: Coordenadas (X=150, Y=140).
-        pagina.insert_text((150, 140), sitio, fontsize=10, color=(0, 0, 0))
+        # Coordenada aproximada (X=210, Y=302)
+        pagina.insert_text((210, 302), sitio, fontsize=9, color=(0, 0, 0))
 
-    # 3. Estampar la firma sobre la línea de "Autorizado"
-    # Ajusta el rectángulo fitz.Rect(X_inicial, Y_inicial, X_final, Y_final) donde está la línea "Autorizado"
-    rect_autorizado = fitz.Rect(380, 650, 550, 720)
+    # 3. Estampar Firma Digital en la línea "Autorizado (supervisor)"
+    # En la imagen, la línea "Autorizado" está abajo a la izquierda.
+    # Definimos un rectángulo fitz.Rect(X_min, Y_min, X_max, Y_max) que cubra el espacio sobre la línea.
+    rect_autorizado = fitz.Rect(50, 810, 220, 875)
     pagina.insert_image(rect_autorizado, filename=img_firma_path)
 
     doc.save(pdf_output_path)
     doc.close()
-
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
     """Envía el correo usando las credenciales guardadas en secrets.toml."""
