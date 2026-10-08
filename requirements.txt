@@ -1,0 +1,12 @@
+pip freeze > requirements.txt
+streamlit
+pdfplumber
+pandas
+openpyxl
+matplotlib
+seaborn
+pdf2image
+plotly
+msal
+requests
+pymupdf
