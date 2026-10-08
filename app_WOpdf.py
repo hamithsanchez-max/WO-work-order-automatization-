@@ -162,7 +162,7 @@ st.divider()
 # ==========================================
 st.subheader("3. Finalización y Envío")
 
-destinatario_email = "lhernandez@panarail.com"
+destinatario_email = "hsanchez@panarail.com"
 st.info(f"El documento firmado será enviado a: **{destinatario_email}**")
 
 if st.button("🚀 Finalizar, Firmar y Enviar Work Order", type="primary"):
