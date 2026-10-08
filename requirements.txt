@@ -2,3 +2,4 @@ streamlit
 msal
 requests
 pymupdf
+streamlit-drawable-canvas
