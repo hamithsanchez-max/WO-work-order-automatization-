@@ -218,7 +218,7 @@ st.divider()
 # PROCESAMIENTO Y ENVÍO
 # ==========================================
 st.subheader("3. Finalizar y Enviar")
-destinatario_email = "lhernandez@panarail.com"
+destinatario_email = "hsanchez@panarail.com"
 
 if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
     if not uploaded_file:
