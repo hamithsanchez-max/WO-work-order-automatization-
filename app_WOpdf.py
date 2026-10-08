@@ -130,6 +130,23 @@ with col2:
             key="canvas",
         )
 
+        # Manejo seguro para evitar el RuntimeError de streamlit-drawable-canvas
+        if canvas_result is not None:
+            try:
+                if canvas_result.image_data is not None:
+                    # Verificar que se haya realizado algún trazo en el lienzo
+                    img_array = canvas_result.image_data.astype('uint8')
+                    # Guardar la imagen del canvas
+                    img = Image.fromarray(img_array)
+                    img.save(temp_firma_path)
+                    firma_lista = True
+            except RuntimeError:
+                # El canvas aún no contiene datos de imagen inicializados
+                firma_lista = False
+            except Exception as e:
+                st.warning(f"Esperando trazo de firma... ({e})")
+                firma_lista = False 
+
         if canvas_result.image_data is not None:
             # Guardar la imagen extraída del canvas
             img = Image.fromarray(canvas_result.image_data.astype('uint8'))
