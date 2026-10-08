@@ -110,7 +110,12 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
 
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
-    """Envía el correo electrónico con el archivo PDF adjunto."""
+    """
+    Envía el correo electrónico de forma segura adaptándose a SSL (puerto 465) o TLS (puerto 587).
+    """
+    if "smtp" not in st.secrets:
+        return False, "No se encontró la sección [smtp] en Secrets de Streamlit. Verifique 'Settings > Secrets'."
+
     try:
         smtp_server = st.secrets["smtp"]["server"]
         smtp_port = int(st.secrets["smtp"]["port"])
@@ -135,11 +140,18 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
         else:
             return False, "El archivo PDF firmado no fue encontrado."
 
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
+        # Selección automática del método de cifrado según el puerto
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15)
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+            server.quit()
+        else:
+            server = smtplib.SMTP(smtp_server, smtp_port, timeout=15)
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+            server.quit()
 
         return True, "Correo enviado exitosamente."
     except Exception as e:
@@ -196,9 +208,11 @@ with col2:
             try:
                 if canvas_result.image_data is not None:
                     img_array = canvas_result.image_data.astype('uint8')
-                    img = Image.fromarray(img_array)
-                    img.save(temp_firma_path)
-                    firma_lista = True
+                    # Verificar que el canvas contenga trazos reales (no esté transparente/blanco)
+                    if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
+                        img = Image.fromarray(img_array)
+                        img.save(temp_firma_path)
+                        firma_lista = True
             except RuntimeError:
                 firma_lista = False
             except Exception:
@@ -226,7 +240,7 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
     elif not numero_ot:
         st.error("Por favor ingrese el N° de OT.")
     elif not firma_lista:
-        st.error("Por favor proporcione una firma.")
+        st.error("Por favor proporcione una firma antes de continuar.")
     else:
         path_pdf_original = os.path.join(DIR_WO, f"OT_{numero_ot}_original.pdf")
         path_pdf_firmado = os.path.join(DIR_COMPLETED, f"OT_{numero_ot}_firmado.pdf")
