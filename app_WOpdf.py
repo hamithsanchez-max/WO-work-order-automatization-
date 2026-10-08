@@ -130,19 +130,11 @@ with col2:
             key="canvas",
         )
 
-    if canvas_result is not None:
-    try:
-        # Intentamos obtener la imagen del canvas
-        img_data = canvas_result.image_data
-        
-        if img_data is not None:
-            # --- PON AQUÍ TU CÓDIGO PARA PROCESAR LA IMAGEN ---
-            # Por ejemplo: st.write("Firma/dibujo detectado")
-            pass
-            
-    except RuntimeError:
-        # El canvas aún no ha renderizado la imagen o está esperando interacción
-        pass
+        if canvas_result.image_data is not None:
+            # Guardar la imagen extraída del canvas
+            img = Image.fromarray(canvas_result.image_data.astype('uint8'))
+            img.save(temp_firma_path)
+            firma_lista = True
 
     else:
         uploaded_signature = st.file_uploader("Subir imagen de la firma", type=["png", "jpg", "jpeg"])
