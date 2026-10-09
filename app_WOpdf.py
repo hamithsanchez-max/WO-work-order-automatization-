@@ -85,7 +85,6 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
             rect = matches_fecha[0]
             pagina.insert_text((rect.x1 + 8, rect.y1 - 2), str(fecha_completada), fontsize=9, color=(0, 0, 0))
         else:
-            # Respaldo de posición relativa en el encabezado derecho
             pagina.insert_text((page_rect.width * 0.70, page_rect.height * 0.15), str(fecha_completada), fontsize=9, color=(0, 0, 0))
 
     # 4. POSICIONAR FIRMA EN 'Autorizado'
@@ -114,7 +113,7 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
     """
-    Envía el correo probando múltiples estrategias de conexión para evitar 'Connection unexpectedly closed'.
+    Envía el correo probando conexiones SMTP seguras de manera secuencial.
     """
     if "smtp" not in st.secrets:
         return False, "No se encontró la sección [smtp] en Secrets de Streamlit. Verifique en Settings > Secrets."
@@ -142,27 +141,25 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
     else:
         return False, "El archivo PDF firmado no fue encontrado."
 
-    # Intento 1: Conexión SSL directa (Puerto 465)
     try:
-        server = smtplib.SMTP_SSL(smtp_server, 465, timeout=12)
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
-        server.quit()
-        return True, "Correo enviado exitosamente (SSL 465)."
-    except Exception as e_ssl:
-        # Intento 2: Conexión STARTTLS (Puerto 587 o puerto configurado)
-        try:
-            puerto_tls = smtp_port if smtp_port != 465 else 587
-            server = smtplib.SMTP(smtp_server, puerto_tls, timeout=12)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-            server.quit()
-            return True, "Correo enviado exitosamente (STARTTLS)."
-        except Exception as e_tls:
-            return False, f"Falló conexión SMTP: SSL ({str(e_ssl)}) | TLS ({str(e_tls)}). Verifique su usuario/contraseña de aplicación."
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_server, 465, timeout=15) as server:
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+            return True, "Correo enviado exitosamente mediante SSL (puerto 465)."
+        else:
+            with smtplib.SMTP(smtp_server, 587, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+            return True, "Correo enviado exitosamente mediante STARTTLS (puerto 587)."
+
+    except smtplib.SMTPAuthenticationError:
+        return False, "Error de credenciales: La contraseña de aplicación o usuario es incorrecto."
+    except Exception as e:
+        return False, f"Error al conectar con el servidor de correo ({smtp_server}:{smtp_port}): {str(e)}"
 
 
 # ==========================================
@@ -191,7 +188,6 @@ with col1:
     departamento = st.text_input("DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones").strip()
     sitio = st.text_input("Sitio:", placeholder="Ej: Cruces de Colon").strip()
     
-    # Campo para la fecha completada (por defecto la fecha de hoy)
     fecha_completada_val = st.date_input("Fecha completada:", value=datetime.today())
     fecha_completada_str = fecha_completada_val.strftime("%m/%d/%Y")
 
@@ -223,6 +219,8 @@ with col2:
                         img = Image.fromarray(img_array)
                         img.save(temp_firma_path)
                         firma_lista = True
+            except RuntimeError:
+                firma_lista = False
             except Exception:
                 firma_lista = False
 
