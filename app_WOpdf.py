@@ -210,19 +210,21 @@ with col2:
             key="canvas_firma",
         )
 
-        if canvas_result is not None and canvas_result.image_data is not None:
+        # SE CORRIGE EL ERROR AL ACCEDER A 'image_data'
+        # Se envuelve con un try/except para evitar RuntimeErrors si el canvas aún no está renderizado.
+        if canvas_result is not None:
             try:
-                img_array = canvas_result.image_data.astype("uint8")
-                if (
-                    img_array.shape[2] == 4
-                    and (img_array[:, :, 3] > 0).any()
-                ):
-                    img = Image.fromarray(img_array)
-                    img = img.convert("RGBA")
-                    img.save(temp_firma_path)
-                    firma_lista = True
-            except Exception as e:
-                st.warning(f"Error procesando la firma dibujada: {e}")
+                # Comprobamos que existan datos válidos en el objeto canvas
+                if hasattr(canvas_result, 'image_data') and canvas_result.image_data is not None:
+                    img_array = canvas_result.image_data.astype("uint8")
+                    # Validamos el canal alpha (píxeles no vacíos) para confirmar que se ha dibujado algo
+                    if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
+                        img = Image.fromarray(img_array)
+                        img = img.convert("RGBA")
+                        img.save(temp_firma_path)
+                        firma_lista = True
+            except (RuntimeError, ValueError, TypeError, AttributeError):
+                # Ignoramos errores transitorios mientras se carga el Canvas
                 firma_lista = False
 
     else:
@@ -252,7 +254,7 @@ if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
     elif not numero_ot:
         st.error("Por favor ingrese el N° de OT.")
     elif not firma_lista:
-        st.error("Por favor proporcione una firma antes de continuar.")
+        st.error("Por favor proporcione una firma antes de continuar o intente realizar un trazo más amplio.")
     else:
         path_pdf_original = os.path.join(
             DIR_WO, f"OT_{numero_ot}_original.pdf"
