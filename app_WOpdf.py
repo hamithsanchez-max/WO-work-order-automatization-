@@ -127,30 +127,29 @@ def estampar_datos_y_firma(
                 color=(0, 0, 0),
             )
 
-    # 4. POSICIONAR FIRMA EN 'Autorizado' (AJUSTADO PARA QUEDAR SOBRE LA LÍNEA)
+    # 4. POSICIONAR FIRMA EN 'Autorizado' (ELEVADO PARA NO TAPAR EL TEXTO)
     matches_aut = pagina.search_for("Autorizado")
     if matches_aut:
         rect = matches_aut[0]
-        # Ajuste de coordenadas: y0 - 45 e y1 + 5 bajan la firma para que repose justo sobre la línea
+        # Se eleva y0 (-60) y se coloca y1 (rect.y0 - 2) justo por encima del texto "Autorizado"
         firma_box = fitz.Rect(
-            rect.x0 - 15, rect.y0 - 45, rect.x1 + 75, rect.y0 + 5
+            rect.x0 - 15, rect.y0 - 60, rect.x1 + 75, rect.y0 - 2
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
     else:
         firma_box = fitz.Rect(
             page_rect.width * 0.08,
-            page_rect.height * 0.38,
+            page_rect.height * 0.32,
             page_rect.width * 0.35,
-            page_rect.height * 0.45,
+            page_rect.height * 0.40,
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
 
-    # 5. POSICIONAR FOTO DE LA ACTIVIDAD (ÁREA DEL CUADRO AZUL DE REFERENCIA)
+    # 5. POSICIONAR FOTO DE LA ACTIVIDAD
     if img_foto_path and os.path.exists(img_foto_path):
         matches_sup = pagina.search_for("(supervisor)")
         if matches_sup:
             rect_sup = matches_sup[0]
-            # Inicia justo debajo del texto de las firmas y abarca el espacio inferior
             foto_box = fitz.Rect(
                 page_rect.width * 0.12,
                 rect_sup.y1 + 15,
@@ -199,138 +198,4 @@ with col1:
             )
 
     numero_ot = st.text_input(
-        "N° de OT", value=ot_detectada, placeholder="Ej: 34115"
-    ).strip()
-    departamento = st.text_input(
-        "DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones"
-    ).strip()
-    sitio = st.text_input("Sitio:", placeholder="Ej: Cruces de Colon").strip()
-
-    fecha_completada_val = st.date_input(
-        "Fecha completada:", value=datetime.today()
-    )
-    fecha_completada_str = fecha_completada_val.strftime("%m/%d/%Y")
-
-with col2:
-    st.subheader("2. Captura de Firma y Foto")
-    opcion_firma = st.radio(
-        "Método de firma:",
-        ["Dibujar en pantalla", "Cargar imagen de firma (.png/.jpg)"],
-    )
-
-    temp_firma_path = os.path.join(DIR_COMPLETED, "temp_signature.png")
-    temp_foto_path = os.path.join(DIR_COMPLETED, "temp_foto_actividad.png")
-    firma_lista = False
-
-    if opcion_firma == "Dibujar en pantalla":
-        st.write("Dibuje su firma en el recuadro:")
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 255, 255, 0)",
-            stroke_width=2,
-            stroke_color="#000000",
-            background_color="#FFFFFF",
-            height=130,
-            width=320,
-            drawing_mode="freedraw",
-            key="canvas_firma",
-        )
-
-        if canvas_result is not None:
-            try:
-                if hasattr(canvas_result, "image_data") and canvas_result.image_data is not None:
-                    img_array = canvas_result.image_data.astype("uint8")
-                    if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
-                        img = Image.fromarray(img_array)
-                        img = img.convert("RGBA")
-                        img.save(temp_firma_path)
-                        firma_lista = True
-            except (RuntimeError, ValueError, TypeError, AttributeError):
-                firma_lista = False
-
-    else:
-        uploaded_signature = st.file_uploader(
-            "Subir imagen de la firma", type=["png", "jpg", "jpeg"]
-        )
-        if uploaded_signature:
-            try:
-                img = Image.open(uploaded_signature)
-                img.save(temp_firma_path)
-                st.image(img, caption="Vista previa de la firma", width=160)
-                firma_lista = True
-            except Exception as e:
-                st.error(f"Error al procesar la imagen cargada: {e}")
-                firma_lista = False
-
-    st.markdown("---")
-    st.markdown("**Foto de la Actividad (Opcional):**")
-    uploaded_foto = st.file_uploader(
-        "Subir foto de la actividad realizada", type=["png", "jpg", "jpeg"], key="uploader_foto"
-    )
-    foto_adjuntada = False
-    if uploaded_foto:
-        try:
-            foto_img = Image.open(uploaded_foto)
-            foto_img.save(temp_foto_path)
-            st.image(foto_img, caption="Vista previa de la foto de la actividad", width=220)
-            foto_adjuntada = True
-        except Exception as e:
-            st.error(f"Error al procesar la foto de la actividad: {e}")
-
-st.divider()
-
-# ==========================================
-# PROCESAMIENTO Y GUARDADO EN ONEDRIVE
-# ==========================================
-st.subheader("3. Finalizar y Guardar")
-
-if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
-    if not uploaded_file:
-        st.error("Por favor suba el archivo PDF de la Orden de Trabajo.")
-    elif not numero_ot:
-        st.error("Por favor ingrese el N° de OT.")
-    elif not firma_lista:
-        st.error("Por favor proporcione una firma antes de continuar.")
-    else:
-        path_pdf_original = os.path.join(
-            DIR_WO, f"OT_{numero_ot}_original.pdf"
-        )
-
-        fecha_creacion_str = datetime.now().strftime("%Y-%m-%d")
-        nombre_archivo_final = f"OT_{numero_ot}_completada_{fecha_creacion_str}.pdf"
-
-        path_pdf_firmado_local = os.path.join(DIR_COMPLETED, nombre_archivo_final)
-        path_pdf_onedrive = os.path.join(DIR_ONEDRIVE, nombre_archivo_final)
-
-        with open(path_pdf_original, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        with st.spinner("Modificando PDF, estampando firma y foto..."):
-            estampar_datos_y_firma(
-                pdf_input_path=path_pdf_original,
-                pdf_output_path=path_pdf_firmado_local,
-                img_firma_path=temp_firma_path,
-                departamento=departamento,
-                sitio=sitio,
-                fecha_completada=fecha_completada_str,
-                num_ot=numero_ot,
-                img_foto_path=temp_foto_path if foto_adjuntada else None,
-            )
-
-        # Guardado en la carpeta de OneDrive local
-        try:
-            os.makedirs(DIR_ONEDRIVE, exist_ok=True)
-            with open(path_pdf_firmado_local, "rb") as src, open(path_pdf_onedrive, "wb") as dst:
-                dst.write(src.read())
-            st.balloons()
-            st.success("✅ Documento PDF actualizado, firmado y guardado correctamente.")
-            st.info(f"📁 **Guardado automáticamente en OneDrive:**\n`{path_pdf_onedrive}`")
-        except Exception as e:
-            st.warning(f"Ocurrió un problema al guardar en la carpeta de OneDrive: {e}")
-
-        with open(path_pdf_firmado_local, "rb") as f:
-            st.download_button(
-                label="📥 Descargar copia del PDF Final Firmado",
-                data=f.read(),
-                file_name=nombre_archivo_final,
-                mime="application/pdf",
-            )
+        "N° de OT", value=ot_detect
