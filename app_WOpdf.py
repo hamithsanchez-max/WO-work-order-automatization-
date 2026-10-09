@@ -63,8 +63,9 @@ def estampar_datos_y_firma(
     sitio,
     fecha_completada,
     num_ot,
+    img_foto_path=None,
 ):
-    """Encuentra dinámicamente la posición de los campos e inserta los textos y firma."""
+    """Encuentra dinámicamente la posición de los campos e inserta los textos, la firma y la foto de la actividad."""
     doc = fitz.open(pdf_input_path)
     pagina = doc[0]  # Primera página de la OT
     page_rect = pagina.rect
@@ -126,22 +127,44 @@ def estampar_datos_y_firma(
                 color=(0, 0, 0),
             )
 
-    # 4. POSICIONAR FIRMA EN 'Autorizado'
+    # 4. POSICIONAR FIRMA EN 'Autorizado' (AJUSTADO PARA QUEDAR SOBRE LA LÍNEA)
     matches_aut = pagina.search_for("Autorizado")
     if matches_aut:
         rect = matches_aut[0]
+        # Ajuste de coordenadas: y0 - 45 e y1 + 5 bajan la firma para que repose justo sobre la línea
         firma_box = fitz.Rect(
-            rect.x0 - 20, rect.y0 - 65, rect.x1 + 80, rect.y0 - 5
+            rect.x0 - 15, rect.y0 - 45, rect.x1 + 75, rect.y0 + 5
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
     else:
         firma_box = fitz.Rect(
             page_rect.width * 0.08,
-            page_rect.height * 0.85,
+            page_rect.height * 0.38,
             page_rect.width * 0.35,
-            page_rect.height * 0.93,
+            page_rect.height * 0.45,
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
+
+    # 5. POSICIONAR FOTO DE LA ACTIVIDAD (ÁREA DEL CUADRO AZUL DE REFERENCIA)
+    if img_foto_path and os.path.exists(img_foto_path):
+        matches_sup = pagina.search_for("(supervisor)")
+        if matches_sup:
+            rect_sup = matches_sup[0]
+            # Inicia justo debajo del texto de las firmas y abarca el espacio inferior
+            foto_box = fitz.Rect(
+                page_rect.width * 0.12,
+                rect_sup.y1 + 15,
+                page_rect.width * 0.88,
+                page_rect.height * 0.92,
+            )
+        else:
+            foto_box = fitz.Rect(
+                page_rect.width * 0.12,
+                page_rect.height * 0.48,
+                page_rect.width * 0.88,
+                page_rect.height * 0.92,
+            )
+        pagina.insert_image(foto_box, filename=img_foto_path)
 
     doc.save(pdf_output_path)
     doc.close()
@@ -152,7 +175,7 @@ def estampar_datos_y_firma(
 # ==========================================
 st.title("📝 Procesamiento, Edición y Firma de Work Order (WO)")
 st.markdown(
-    "Cargue el PDF de la Orden de Trabajo para extraer datos, ingresar campos y estampar la firma."
+    "Cargue el PDF de la Orden de Trabajo para extraer datos, ingresar campos, estampar la firma y adjuntar fotos."
 )
 
 col1, col2 = st.columns([1, 1])
@@ -189,13 +212,14 @@ with col1:
     fecha_completada_str = fecha_completada_val.strftime("%m/%d/%Y")
 
 with col2:
-    st.subheader("2. Captura de Firma")
+    st.subheader("2. Captura de Firma y Foto")
     opcion_firma = st.radio(
         "Método de firma:",
         ["Dibujar en pantalla", "Cargar imagen de firma (.png/.jpg)"],
     )
 
     temp_firma_path = os.path.join(DIR_COMPLETED, "temp_signature.png")
+    temp_foto_path = os.path.join(DIR_COMPLETED, "temp_foto_actividad.png")
     firma_lista = False
 
     if opcion_firma == "Dibujar en pantalla":
@@ -205,13 +229,12 @@ with col2:
             stroke_width=2,
             stroke_color="#000000",
             background_color="#FFFFFF",
-            height=150,
-            width=350,
+            height=130,
+            width=320,
             drawing_mode="freedraw",
             key="canvas_firma",
         )
 
-        # Control de excepciones para evitar el RuntimeError en la carga del canvas
         if canvas_result is not None:
             try:
                 if hasattr(canvas_result, "image_data") and canvas_result.image_data is not None:
@@ -232,11 +255,26 @@ with col2:
             try:
                 img = Image.open(uploaded_signature)
                 img.save(temp_firma_path)
-                st.image(img, caption="Vista previa de la firma", width=180)
+                st.image(img, caption="Vista previa de la firma", width=160)
                 firma_lista = True
             except Exception as e:
                 st.error(f"Error al procesar la imagen cargada: {e}")
                 firma_lista = False
+
+    st.markdown("---")
+    st.markdown("**Foto de la Actividad (Opcional):**")
+    uploaded_foto = st.file_uploader(
+        "Subir foto de la actividad realizada", type=["png", "jpg", "jpeg"], key="uploader_foto"
+    )
+    foto_adjuntada = False
+    if uploaded_foto:
+        try:
+            foto_img = Image.open(uploaded_foto)
+            foto_img.save(temp_foto_path)
+            st.image(foto_img, caption="Vista previa de la foto de la actividad", width=220)
+            foto_adjuntada = True
+        except Exception as e:
+            st.error(f"Error al procesar la foto de la actividad: {e}")
 
 st.divider()
 
@@ -266,7 +304,7 @@ if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
         with open(path_pdf_original, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        with st.spinner("Modificando PDF, imprimiendo fecha y estampando firma..."):
+        with st.spinner("Modificando PDF, estampando firma y foto..."):
             estampar_datos_y_firma(
                 pdf_input_path=path_pdf_original,
                 pdf_output_path=path_pdf_firmado_local,
@@ -275,6 +313,7 @@ if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
                 sitio=sitio,
                 fecha_completada=fecha_completada_str,
                 num_ot=numero_ot,
+                img_foto_path=temp_foto_path if foto_adjuntada else None,
             )
 
         # Guardado en la carpeta de OneDrive local
