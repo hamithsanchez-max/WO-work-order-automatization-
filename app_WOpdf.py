@@ -1,6 +1,7 @@
 import os
 import re
 import smtplib
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -11,7 +12,7 @@ from streamlit_drawable_canvas import st_canvas
 
 # Configuración de la página en Streamlit
 st.set_page_config(
-    page_title="Gestión y Firma de Ordenes de Trabajo",
+    page_title="Gestión y Firma de Órdenes de Trabajo",
     page_icon="📝",
     layout="wide"
 )
@@ -35,7 +36,6 @@ def extraer_datos_pdf(pdf_path):
             texto_completo += pagina.get_text("text") + "\n"
         doc.close()
 
-        # Patrones para capturar el número de OT (ej. "N° de OT: 34115" o "OT: 34115")
         coincidencia = re.search(r'N[°o]?\s*de\s*OT[:\s]*(\d+)', texto_completo, re.IGNORECASE)
         if not coincidencia:
             coincidencia = re.search(r'(?:OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)
@@ -48,44 +48,47 @@ def extraer_datos_pdf(pdf_path):
     return num_ot
 
 
-def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, departamento, sitio, num_ot):
+def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, departamento, sitio, fecha_completada, num_ot):
     """
-    Encuentra dinámicamente la posición de 'DEPARTAMENTO:', 'Sitio:' y 'Autorizado' en el PDF
-    e inserta los textos y la firma exactamente en su lugar correspondiente.
+    Encuentra dinámicamente la posición de 'DEPARTAMENTO:', 'Sitio:', 'fecha completada:' y 'Autorizado'
+    e inserta los textos y la firma en su lugar correspondiente.
     """
     doc = fitz.open(pdf_input_path)
-    pagina = doc[0]  # Página principal de la orden de trabajo
-    page_rect = pagina.rect  # Ancho y alto del documento
+    pagina = doc[0]  # Primera página de la OT
+    page_rect = pagina.rect
 
-    # --------------------------------------------------------------------------
     # 1. POSICIONAR 'DEPARTAMENTO:'
-    # --------------------------------------------------------------------------
     if departamento:
         matches = pagina.search_for("DEPARTAMENTO:")
         if matches:
             rect = matches[0]
-            x_pos = rect.x1 + 10
-            y_pos = rect.y1 - 2
-            pagina.insert_text((x_pos, y_pos), departamento, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text((rect.x1 + 10, rect.y1 - 2), departamento, fontsize=9, color=(0, 0, 0))
         else:
             pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.27), departamento, fontsize=9, color=(0, 0, 0))
 
-    # --------------------------------------------------------------------------
     # 2. POSICIONAR 'Sitio:'
-    # --------------------------------------------------------------------------
     if sitio:
         matches = pagina.search_for("Sitio:")
         if matches:
             rect = matches[0]
-            x_pos = rect.x1 + 10
-            y_pos = rect.y1 - 2
-            pagina.insert_text((x_pos, y_pos), sitio, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text((rect.x1 + 10, rect.y1 - 2), sitio, fontsize=9, color=(0, 0, 0))
         else:
             pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.30), sitio, fontsize=9, color=(0, 0, 0))
 
-    # --------------------------------------------------------------------------
-    # 3. POSICIONAR FIRMA EN 'Autorizado'
-    # --------------------------------------------------------------------------
+    # 3. POSICIONAR 'fecha completada:'
+    if fecha_completada:
+        matches_fecha = pagina.search_for("fecha completada:")
+        if not matches_fecha:
+            matches_fecha = pagina.search_for("FECHA COMPLETADA:")
+        
+        if matches_fecha:
+            rect = matches_fecha[0]
+            pagina.insert_text((rect.x1 + 8, rect.y1 - 2), str(fecha_completada), fontsize=9, color=(0, 0, 0))
+        else:
+            # Respaldo de posición relativa en el encabezado derecho
+            pagina.insert_text((page_rect.width * 0.70, page_rect.height * 0.15), str(fecha_completada), fontsize=9, color=(0, 0, 0))
+
+    # 4. POSICIONAR FIRMA EN 'Autorizado'
     matches_aut = pagina.search_for("Autorizado")
     if matches_aut:
         rect = matches_aut[0]
@@ -111,51 +114,55 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
     """
-    Envía el correo electrónico de forma segura adaptándose a SSL (puerto 465) o TLS (puerto 587).
+    Envía el correo probando múltiples estrategias de conexión para evitar 'Connection unexpectedly closed'.
     """
     if "smtp" not in st.secrets:
-        return False, "No se encontró la sección [smtp] en Secrets de Streamlit. Verifique 'Settings > Secrets'."
+        return False, "No se encontró la sección [smtp] en Secrets de Streamlit. Verifique en Settings > Secrets."
 
+    smtp_server = st.secrets["smtp"]["server"]
+    smtp_port = int(st.secrets["smtp"]["port"])
+    smtp_user = st.secrets["smtp"]["user"]
+    smtp_password = st.secrets["smtp"]["password"]
+
+    msg = MIMEMultipart()
+    msg["From"] = smtp_user
+    msg["To"] = destinatario
+    msg["Subject"] = asunto
+    msg.attach(MIMEText(cuerpo, "plain"))
+
+    if os.path.exists(path_adjunto):
+        with open(path_adjunto, "rb") as f:
+            adjunto = MIMEApplication(f.read(), _subtype="pdf")
+            adjunto.add_header(
+                "Content-Disposition",
+                "attachment",
+                filename=os.path.basename(path_adjunto)
+            )
+            msg.attach(adjunto)
+    else:
+        return False, "El archivo PDF firmado no fue encontrado."
+
+    # Intento 1: Conexión SSL directa (Puerto 465)
     try:
-        smtp_server = st.secrets["smtp"]["server"]
-        smtp_port = int(st.secrets["smtp"]["port"])
-        smtp_user = st.secrets["smtp"]["user"]
-        smtp_password = st.secrets["smtp"]["password"]
-
-        msg = MIMEMultipart()
-        msg["From"] = smtp_user
-        msg["To"] = destinatario
-        msg["Subject"] = asunto
-        msg.attach(MIMEText(cuerpo, "plain"))
-
-        if os.path.exists(path_adjunto):
-            with open(path_adjunto, "rb") as f:
-                adjunto = MIMEApplication(f.read(), _subtype="pdf")
-                adjunto.add_header(
-                    "Content-Disposition",
-                    "attachment",
-                    filename=os.path.basename(path_adjunto)
-                )
-                msg.attach(adjunto)
-        else:
-            return False, "El archivo PDF firmado no fue encontrado."
-
-        # Selección automática del método de cifrado según el puerto
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15)
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-            server.quit()
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=15)
+        server = smtplib.SMTP_SSL(smtp_server, 465, timeout=12)
+        server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        return True, "Correo enviado exitosamente (SSL 465)."
+    except Exception as e_ssl:
+        # Intento 2: Conexión STARTTLS (Puerto 587 o puerto configurado)
+        try:
+            puerto_tls = smtp_port if smtp_port != 465 else 587
+            server = smtplib.SMTP(smtp_server, puerto_tls, timeout=12)
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(smtp_user, smtp_password)
             server.send_message(msg)
             server.quit()
-
-        return True, "Correo enviado exitosamente."
-    except Exception as e:
-        return False, f"Error al enviar el correo: {str(e)}"
+            return True, "Correo enviado exitosamente (STARTTLS)."
+        except Exception as e_tls:
+            return False, f"Falló conexión SMTP: SSL ({str(e_ssl)}) | TLS ({str(e_tls)}). Verifique su usuario/contraseña de aplicación."
 
 
 # ==========================================
@@ -183,6 +190,10 @@ with col1:
     numero_ot = st.text_input("N° de OT", value=ot_detectada, placeholder="Ej: 34115").strip()
     departamento = st.text_input("DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones").strip()
     sitio = st.text_input("Sitio:", placeholder="Ej: Cruces de Colon").strip()
+    
+    # Campo para la fecha completada (por defecto la fecha de hoy)
+    fecha_completada_val = st.date_input("Fecha completada:", value=datetime.today())
+    fecha_completada_str = fecha_completada_val.strftime("%m/%d/%Y")
 
 with col2:
     st.subheader("2. Captura de Firma")
@@ -208,13 +219,10 @@ with col2:
             try:
                 if canvas_result.image_data is not None:
                     img_array = canvas_result.image_data.astype('uint8')
-                    # Verificar que el canvas contenga trazos reales (no esté transparente/blanco)
                     if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
                         img = Image.fromarray(img_array)
                         img.save(temp_firma_path)
                         firma_lista = True
-            except RuntimeError:
-                firma_lista = False
             except Exception:
                 firma_lista = False
 
@@ -248,13 +256,14 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
         with open(path_pdf_original, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        with st.spinner("Modificando PDF y colocando firma en 'Autorizado'..."):
+        with st.spinner("Modificando PDF, imprimiendo fecha y estampando firma..."):
             estampar_datos_y_firma(
                 pdf_input_path=path_pdf_original,
                 pdf_output_path=path_pdf_firmado,
                 img_firma_path=temp_firma_path,
                 departamento=departamento,
                 sitio=sitio,
+                fecha_completada=fecha_completada_str,
                 num_ot=numero_ot
             )
 
@@ -276,7 +285,8 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
                 f"Detalles:\n"
                 f"- N° de OT: {numero_ot}\n"
                 f"- DEPARTAMENTO: {departamento if departamento else 'N/A'}\n"
-                f"- Sitio: {sitio if sitio else 'N/A'}\n\n"
+                f"- Sitio: {sitio if sitio else 'N/A'}\n"
+                f"- Fecha completada: {fecha_completada_str}\n\n"
                 f"Saludos cordiales."
             )
 
