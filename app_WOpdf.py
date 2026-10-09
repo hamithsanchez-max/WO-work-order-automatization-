@@ -1,12 +1,8 @@
 import os
 import re
-import smtplib
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
-from PIL import Image
 import fitz  # PyMuPDF
+from PIL import Image
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 
@@ -14,20 +10,23 @@ from streamlit_drawable_canvas import st_canvas
 st.set_page_config(
     page_title="Gestión y Firma de Órdenes de Trabajo",
     page_icon="📝",
-    layout="wide"
+    layout="wide",
 )
 
 # Definición de directorios locales
 DIR_WO = "work_orders"
 DIR_COMPLETED = "completed"
+
+# Ruta de destino final en OneDrive
+DIR_ONEDRIVE = r"C:\Users\hsanchez\OneDrive - PANAMA RAIL\Documentos\Work Order\Work Order finalizada automaticamente"
+
 os.makedirs(DIR_WO, exist_ok=True)
 os.makedirs(DIR_COMPLETED, exist_ok=True)
+os.makedirs(DIR_ONEDRIVE, exist_ok=True)
 
 
 def extraer_datos_pdf(pdf_path):
-    """
-    Busca de manera dinámica el número de OT recorriendo el texto de todas las páginas.
-    """
+    """Busca de manera dinámica el número de OT recorriendo el texto de todas las páginas."""
     num_ot = ""
     try:
         doc = fitz.open(pdf_path)
@@ -36,9 +35,13 @@ def extraer_datos_pdf(pdf_path):
             texto_completo += pagina.get_text("text") + "\n"
         doc.close()
 
-        coincidencia = re.search(r'N[°o]?\s*de\s*OT[:\s]*(\d+)', texto_completo, re.IGNORECASE)
+        coincidencia = re.search(
+            r"N[°o]?\s*de\s*OT[:\s]*(\d+)", texto_completo, re.IGNORECASE
+        )
         if not coincidencia:
-            coincidencia = re.search(r'(?:OT|WO)[^\d]*(\d+)', texto_completo, re.IGNORECASE)
+            coincidencia = re.search(
+                r"(?:OT|WO)[^\d]*(\d+)", texto_completo, re.IGNORECASE
+            )
 
         if coincidencia:
             num_ot = coincidencia.group(1)
@@ -48,9 +51,17 @@ def extraer_datos_pdf(pdf_path):
     return num_ot
 
 
-def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, departamento, sitio, fecha_completada, num_ot):
-    """
-    Encuentra dinámicamente la posición de 'DEPARTAMENTO:', 'Sitio:', 'fecha completada:' y 'Autorizado'
+def estampar_datos_y_firma(
+    pdf_input_path,
+    pdf_output_path,
+    img_firma_path,
+    departamento,
+    sitio,
+    fecha_completada,
+    num_ot,
+):
+    """Encuentra dinámicamente la posición de 'DEPARTAMENTO:', 'Sitio:', 'fecha completada:' y 'Autorizado'
+
     e inserta los textos y la firma en su lugar correspondiente.
     """
     doc = fitz.open(pdf_input_path)
@@ -62,40 +73,64 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
         matches = pagina.search_for("DEPARTAMENTO:")
         if matches:
             rect = matches[0]
-            pagina.insert_text((rect.x1 + 10, rect.y1 - 2), departamento, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (rect.x1 + 10, rect.y1 - 2),
+                departamento,
+                fontsize=9,
+                color=(0, 0, 0),
+            )
         else:
-            pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.27), departamento, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (page_rect.width * 0.35, page_rect.height * 0.27),
+                departamento,
+                fontsize=9,
+                color=(0, 0, 0),
+            )
 
     # 2. POSICIONAR 'Sitio:'
     if sitio:
         matches = pagina.search_for("Sitio:")
         if matches:
             rect = matches[0]
-            pagina.insert_text((rect.x1 + 10, rect.y1 - 2), sitio, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (rect.x1 + 10, rect.y1 - 2), sitio, fontsize=9, color=(0, 0, 0)
+            )
         else:
-            pagina.insert_text((page_rect.width * 0.35, page_rect.height * 0.30), sitio, fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (page_rect.width * 0.35, page_rect.height * 0.30),
+                sitio,
+                fontsize=9,
+                color=(0, 0, 0),
+            )
 
     # 3. POSICIONAR 'fecha completada:'
     if fecha_completada:
         matches_fecha = pagina.search_for("fecha completada:")
         if not matches_fecha:
             matches_fecha = pagina.search_for("FECHA COMPLETADA:")
-        
+
         if matches_fecha:
             rect = matches_fecha[0]
-            pagina.insert_text((rect.x1 + 8, rect.y1 - 2), str(fecha_completada), fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (rect.x1 + 8, rect.y1 - 2),
+                str(fecha_completada),
+                fontsize=9,
+                color=(0, 0, 0),
+            )
         else:
-            pagina.insert_text((page_rect.width * 0.70, page_rect.height * 0.15), str(fecha_completada), fontsize=9, color=(0, 0, 0))
+            pagina.insert_text(
+                (page_rect.width * 0.70, page_rect.height * 0.15),
+                str(fecha_completada),
+                fontsize=9,
+                color=(0, 0, 0),
+            )
 
     # 4. POSICIONAR FIRMA EN 'Autorizado'
     matches_aut = pagina.search_for("Autorizado")
     if matches_aut:
         rect = matches_aut[0]
         firma_box = fitz.Rect(
-            rect.x0 - 20,
-            rect.y0 - 65,
-            rect.x1 + 80,
-            rect.y0 - 5
+            rect.x0 - 20, rect.y0 - 65, rect.x1 + 80, rect.y0 - 5
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
     else:
@@ -103,7 +138,7 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
             page_rect.width * 0.08,
             page_rect.height * 0.85,
             page_rect.width * 0.35,
-            page_rect.height * 0.93
+            page_rect.height * 0.93,
         )
         pagina.insert_image(firma_box, filename=img_firma_path)
 
@@ -111,68 +146,21 @@ def estampar_datos_y_firma(pdf_input_path, pdf_output_path, img_firma_path, depa
     doc.close()
 
 
-def enviar_correo_smtp(destinatario, asunto, cuerpo, path_adjunto):
-    """
-    Envía el correo probando conexiones SMTP seguras de manera secuencial.
-    """
-    if "smtp" not in st.secrets:
-        return False, "No se encontró la sección [smtp] en Secrets de Streamlit. Verifique en Settings > Secrets."
-
-    smtp_server = st.secrets["smtp"]["server"]
-    smtp_port = int(st.secrets["smtp"]["port"])
-    smtp_user = st.secrets["smtp"]["user"]
-    smtp_password = st.secrets["smtp"]["password"]
-
-    msg = MIMEMultipart()
-    msg["From"] = smtp_user
-    msg["To"] = destinatario
-    msg["Subject"] = asunto
-    msg.attach(MIMEText(cuerpo, "plain"))
-
-    if os.path.exists(path_adjunto):
-        with open(path_adjunto, "rb") as f:
-            adjunto = MIMEApplication(f.read(), _subtype="pdf")
-            adjunto.add_header(
-                "Content-Disposition",
-                "attachment",
-                filename=os.path.basename(path_adjunto)
-            )
-            msg.attach(adjunto)
-    else:
-        return False, "El archivo PDF firmado no fue encontrado."
-
-    try:
-        if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_server, 465, timeout=15) as server:
-                server.login(smtp_user, smtp_password)
-                server.send_message(msg)
-            return True, "Correo enviado exitosamente mediante SSL (puerto 465)."
-        else:
-            with smtplib.SMTP(smtp_server, 587, timeout=15) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(smtp_user, smtp_password)
-                server.send_message(msg)
-            return True, "Correo enviado exitosamente mediante STARTTLS (puerto 587)."
-
-    except smtplib.SMTPAuthenticationError:
-        return False, "Error de credenciales: La contraseña de aplicación o usuario es incorrecto."
-    except Exception as e:
-        return False, f"Error al conectar con el servidor de correo ({smtp_server}:{smtp_port}): {str(e)}"
-
-
 # ==========================================
 # INTERFAZ STREAMLIT
 # ==========================================
 st.title("📝 Procesamiento, Edición y Firma de Work Order (WO)")
-st.markdown("Cargue el PDF de la Orden de Trabajo para extraer datos, ingresar campos y estampar la firma.")
+st.markdown(
+    "Cargue el PDF de la Orden de Trabajo para extraer datos, ingresar campos y estampar la firma."
+)
 
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.subheader("1. Cargar Documento y Datos")
-    uploaded_file = st.file_uploader("Cargar PDF de la Orden de Trabajo", type=["pdf"])
+    uploaded_file = st.file_uploader(
+        "Cargar PDF de la Orden de Trabajo", type=["pdf"]
+    )
 
     ot_detectada = ""
     if uploaded_file is not None:
@@ -182,18 +170,29 @@ with col1:
 
         ot_detectada = extraer_datos_pdf(temp_input_path)
         if ot_detectada:
-            st.success(f"🔍 N° de OT detectado en el PDF: **{ot_detectada}**")
+            st.success(
+                f"🔍 N° de OT detectado en el PDF: **{ot_detectada}**"
+            )
 
-    numero_ot = st.text_input("N° de OT", value=ot_detectada, placeholder="Ej: 34115").strip()
-    departamento = st.text_input("DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones").strip()
+    numero_ot = st.text_input(
+        "N° de OT", value=ot_detectada, placeholder="Ej: 34115"
+    ).strip()
+    departamento = st.text_input(
+        "DEPARTAMENTO:", placeholder="Ej: Señales y Telecomunicaciones"
+    ).strip()
     sitio = st.text_input("Sitio:", placeholder="Ej: Cruces de Colon").strip()
-    
-    fecha_completada_val = st.date_input("Fecha completada:", value=datetime.today())
+
+    fecha_completada_val = st.date_input(
+        "Fecha completada:", value=datetime.today()
+    )
     fecha_completada_str = fecha_completada_val.strftime("%m/%d/%Y")
 
 with col2:
     st.subheader("2. Captura de Firma")
-    opcion_firma = st.radio("Método de firma:", ["Dibujar en pantalla", "Cargar imagen de firma (.png/.jpg)"])
+    opcion_firma = st.radio(
+        "Método de firma:",
+        ["Dibujar en pantalla", "Cargar imagen de firma (.png/.jpg)"],
+    )
 
     temp_firma_path = os.path.join(DIR_COMPLETED, "temp_signature.png")
     firma_lista = False
@@ -211,36 +210,43 @@ with col2:
             key="canvas_firma",
         )
 
-        if canvas_result is not None:
+        if canvas_result is not None and canvas_result.image_data is not None:
             try:
-                if canvas_result.image_data is not None:
-                    img_array = canvas_result.image_data.astype('uint8')
-                    if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
-                        img = Image.fromarray(img_array)
-                        img.save(temp_firma_path)
-                        firma_lista = True
-            except RuntimeError:
-                firma_lista = False
-            except Exception:
+                img_array = canvas_result.image_data.astype("uint8")
+                if (
+                    img_array.shape[2] == 4
+                    and (img_array[:, :, 3] > 0).any()
+                ):
+                    img = Image.fromarray(img_array)
+                    img = img.convert("RGBA")
+                    img.save(temp_firma_path)
+                    firma_lista = True
+            except Exception as e:
+                st.warning(f"Error procesando la firma dibujada: {e}")
                 firma_lista = False
 
     else:
-        uploaded_signature = st.file_uploader("Subir imagen de la firma", type=["png", "jpg", "jpeg"])
+        uploaded_signature = st.file_uploader(
+            "Subir imagen de la firma", type=["png", "jpg", "jpeg"]
+        )
         if uploaded_signature:
-            img = Image.open(uploaded_signature)
-            img.save(temp_firma_path)
-            st.image(img, caption="Vista previa de la firma", width=180)
-            firma_lista = True
+            try:
+                img = Image.open(uploaded_signature)
+                img.save(temp_firma_path)
+                st.image(img, caption="Vista previa de la firma", width=180)
+                firma_lista = True
+            except Exception as e:
+                st.error(f"Error al procesar la imagen cargada: {e}")
+                firma_lista = False
 
 st.divider()
 
 # ==========================================
-# PROCESAMIENTO Y ENVÍO
+# PROCESAMIENTO Y GUARDADO AUTOMÁTICO
 # ==========================================
-st.subheader("3. Finalizar y Enviar")
-destinatario_email = "hsanchez@panarail.com"
+st.subheader("3. Finalizar y Guardar")
 
-if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
+if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
     if not uploaded_file:
         st.error("Por favor suba el archivo PDF de la Orden de Trabajo.")
     elif not numero_ot:
@@ -248,8 +254,16 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
     elif not firma_lista:
         st.error("Por favor proporcione una firma antes de continuar.")
     else:
-        path_pdf_original = os.path.join(DIR_WO, f"OT_{numero_ot}_original.pdf")
-        path_pdf_firmado = os.path.join(DIR_COMPLETED, f"OT_{numero_ot}_firmado.pdf")
+        path_pdf_original = os.path.join(
+            DIR_WO, f"OT_{numero_ot}_original.pdf"
+        )
+        
+        # Generación del nombre con número de OT y fecha de creación (YYYY-MM-DD)
+        fecha_creacion_str = datetime.now().strftime("%Y-%m-%d")
+        nombre_archivo_final = f"OT_{numero_ot}_completada_{fecha_creacion_str}.pdf"
+        
+        path_pdf_firmado_local = os.path.join(DIR_COMPLETED, nombre_archivo_final)
+        path_pdf_onedrive = os.path.join(DIR_ONEDRIVE, nombre_archivo_final)
 
         with open(path_pdf_original, "wb") as f:
             f.write(uploaded_file.getbuffer())
@@ -257,46 +271,29 @@ if st.button("🚀 Guardar Cambios, Firmar y Enviar OT", type="primary"):
         with st.spinner("Modificando PDF, imprimiendo fecha y estampando firma..."):
             estampar_datos_y_firma(
                 pdf_input_path=path_pdf_original,
-                pdf_output_path=path_pdf_firmado,
+                pdf_output_path=path_pdf_firmado_local,
                 img_firma_path=temp_firma_path,
                 departamento=departamento,
                 sitio=sitio,
                 fecha_completada=fecha_completada_str,
-                num_ot=numero_ot
+                num_ot=numero_ot,
             )
 
-        st.success("✅ Documento PDF actualizado y firmado correctamente.")
+        # Guardar automáticamente copia en OneDrive
+        try:
+            with open(path_pdf_firmado_local, "rb") as src, open(path_pdf_onedrive, "wb") as dst:
+                dst.write(src.read())
+            st.balloons()
+            st.success("✅ Documento PDF actualizado, firmado y guardado correctamente.")
+            st.info(f"📁 **Guardado automáticamente en OneDrive:**\n`{path_pdf_onedrive}`")
+        except Exception as e:
+            st.warning(f"Se generó el PDF localmente, pero ocurrió un problema al guardar en OneDrive: {e}")
 
-        with open(path_pdf_firmado, "rb") as f:
+        # Opción adicional para descargar manualmente desde la interfaz
+        with open(path_pdf_firmado_local, "rb") as f:
             st.download_button(
-                label="📥 Descargar PDF Final Firmado",
-                data=f,
-                file_name=f"OT_{numero_ot}_Firmado.pdf",
-                mime="application/pdf"
+                label="📥 Descargar copia del PDF Final Firmado",
+                data=f.read(),
+                file_name=nombre_archivo_final,
+                mime="application/pdf",
             )
-
-        with st.spinner(f"Enviando correo a {destinatario_email}..."):
-            asunto = f"Work Order Finalizada - OT #{numero_ot}"
-            cuerpo = (
-                f"Estimado,\n\n"
-                f"Se adjunta la Orden de Trabajo completada y autorizada.\n\n"
-                f"Detalles:\n"
-                f"- N° de OT: {numero_ot}\n"
-                f"- DEPARTAMENTO: {departamento if departamento else 'N/A'}\n"
-                f"- Sitio: {sitio if sitio else 'N/A'}\n"
-                f"- Fecha completada: {fecha_completada_str}\n\n"
-                f"Saludos cordiales."
-            )
-
-            exito, mensaje = enviar_correo_smtp(
-                destinatario=destinatario_email,
-                asunto=asunto,
-                cuerpo=cuerpo,
-                path_adjunto=path_pdf_firmado
-            )
-
-            if exito:
-                st.balloons()
-                st.success(f"📩 ¡Work Order #{numero_ot} enviada con éxito a {destinatario_email}!")
-            else:
-                st.error(f"⚠️ {mensaje}")
