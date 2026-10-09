@@ -13,16 +13,20 @@ st.set_page_config(
     layout="wide",
 )
 
-# Definición de directorios locales
+# Definición de directorios locales de trabajo
 DIR_WO = "work_orders"
 DIR_COMPLETED = "completed"
 
-# Ruta de destino final en OneDrive
+# Ruta de destino en tu OneDrive Local (Windows)
 DIR_ONEDRIVE = r"C:\Users\hsanchez\OneDrive - PANAMA RAIL\Documentos\Work Order\Work Order finalizada automaticamente"
 
 os.makedirs(DIR_WO, exist_ok=True)
 os.makedirs(DIR_COMPLETED, exist_ok=True)
-os.makedirs(DIR_ONEDRIVE, exist_ok=True)
+
+try:
+    os.makedirs(DIR_ONEDRIVE, exist_ok=True)
+except Exception:
+    pass
 
 
 def extraer_datos_pdf(pdf_path):
@@ -60,10 +64,7 @@ def estampar_datos_y_firma(
     fecha_completada,
     num_ot,
 ):
-    """Encuentra dinámicamente la posición de 'DEPARTAMENTO:', 'Sitio:', 'fecha completada:' y 'Autorizado'
-
-    e inserta los textos y la firma en su lugar correspondiente.
-    """
+    """Encuentra dinámicamente la posición de los campos e inserta los textos y firma."""
     doc = fitz.open(pdf_input_path)
     pagina = doc[0]  # Primera página de la OT
     page_rect = pagina.rect
@@ -210,21 +211,17 @@ with col2:
             key="canvas_firma",
         )
 
-        # SE CORRIGE EL ERROR AL ACCEDER A 'image_data'
-        # Se envuelve con un try/except para evitar RuntimeErrors si el canvas aún no está renderizado.
+        # Control de excepciones para evitar el RuntimeError en la carga del canvas
         if canvas_result is not None:
             try:
-                # Comprobamos que existan datos válidos en el objeto canvas
-                if hasattr(canvas_result, 'image_data') and canvas_result.image_data is not None:
+                if hasattr(canvas_result, "image_data") and canvas_result.image_data is not None:
                     img_array = canvas_result.image_data.astype("uint8")
-                    # Validamos el canal alpha (píxeles no vacíos) para confirmar que se ha dibujado algo
                     if img_array.shape[2] == 4 and (img_array[:, :, 3] > 0).any():
                         img = Image.fromarray(img_array)
                         img = img.convert("RGBA")
                         img.save(temp_firma_path)
                         firma_lista = True
             except (RuntimeError, ValueError, TypeError, AttributeError):
-                # Ignoramos errores transitorios mientras se carga el Canvas
                 firma_lista = False
 
     else:
@@ -244,7 +241,7 @@ with col2:
 st.divider()
 
 # ==========================================
-# PROCESAMIENTO Y GUARDADO AUTOMÁTICO
+# PROCESAMIENTO Y GUARDADO EN ONEDRIVE
 # ==========================================
 st.subheader("3. Finalizar y Guardar")
 
@@ -254,16 +251,15 @@ if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
     elif not numero_ot:
         st.error("Por favor ingrese el N° de OT.")
     elif not firma_lista:
-        st.error("Por favor proporcione una firma antes de continuar o intente realizar un trazo más amplio.")
+        st.error("Por favor proporcione una firma antes de continuar.")
     else:
         path_pdf_original = os.path.join(
             DIR_WO, f"OT_{numero_ot}_original.pdf"
         )
-        
-        # Generación del nombre con número de OT y fecha de creación (YYYY-MM-DD)
+
         fecha_creacion_str = datetime.now().strftime("%Y-%m-%d")
         nombre_archivo_final = f"OT_{numero_ot}_completada_{fecha_creacion_str}.pdf"
-        
+
         path_pdf_firmado_local = os.path.join(DIR_COMPLETED, nombre_archivo_final)
         path_pdf_onedrive = os.path.join(DIR_ONEDRIVE, nombre_archivo_final)
 
@@ -281,17 +277,17 @@ if st.button("🚀 Guardar Cambios y Finalizar OT", type="primary"):
                 num_ot=numero_ot,
             )
 
-        # Guardar automáticamente copia en OneDrive
+        # Guardado en la carpeta de OneDrive local
         try:
+            os.makedirs(DIR_ONEDRIVE, exist_ok=True)
             with open(path_pdf_firmado_local, "rb") as src, open(path_pdf_onedrive, "wb") as dst:
                 dst.write(src.read())
             st.balloons()
             st.success("✅ Documento PDF actualizado, firmado y guardado correctamente.")
             st.info(f"📁 **Guardado automáticamente en OneDrive:**\n`{path_pdf_onedrive}`")
         except Exception as e:
-            st.warning(f"Se generó el PDF localmente, pero ocurrió un problema al guardar en OneDrive: {e}")
+            st.warning(f"Ocurrió un problema al guardar en la carpeta de OneDrive: {e}")
 
-        # Opción adicional para descargar manualmente desde la interfaz
         with open(path_pdf_firmado_local, "rb") as f:
             st.download_button(
                 label="📥 Descargar copia del PDF Final Firmado",
